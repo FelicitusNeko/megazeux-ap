@@ -199,11 +199,7 @@ static inline boolean platform_opendir(struct mzx_dir *dir, const char *path)
 
 #if defined(CONFIG_PSP) || defined(CONFIG_3DS)
   if(dir->path != path)
-  {
-    snprintf(dir->path, PATH_BUF_LEN, "%s%c*", path,
-      path[strlen(path) - 1] != DIR_SEPARATOR_CHAR ? DIR_SEPARATOR_CHAR : 0
-    );
-  }
+    snprintf(dir->path, PATH_BUF_LEN, "%s", path);
 #endif
 
   dir->opaque = opendir(path);
