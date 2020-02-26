@@ -31,6 +31,7 @@ __M_BEGIN_DECLS
 UTILS_LIBSPEC FILE *fopen_unsafe(const char *path, const char *mode);
 UTILS_LIBSPEC char *mzx_getcwd(char *buf, size_t size);
 UTILS_LIBSPEC int mzx_chdir(const char *path);
+UTILS_LIBSPEC int mzx_mkdir(const char *path, int mode);
 UTILS_LIBSPEC int mzx_unlink(const char *path);
 UTILS_LIBSPEC int mzx_rmdir(const char *path);
 UTILS_LIBSPEC int mzx_stat(const char *path, struct stat *buf);
@@ -38,6 +39,7 @@ UTILS_LIBSPEC int mzx_stat(const char *path, struct stat *buf);
 // Replace standard versions of above functions with our wrappers.
 #define getcwd(buf, size) mzx_getcwd(buf, size)
 #define chdir(path) mzx_chdir(path)
+#define mkdir(path, mode) mzx_mkdir(path, mode)
 #define unlink(path) mzx_unlink(path)
 #define rmdir(path) mzx_rmdir(path)
 #define stat(path, buf) mzx_stat(path, buf)

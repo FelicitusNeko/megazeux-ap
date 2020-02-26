@@ -39,6 +39,15 @@ static inline int _real_rmdir(const char *path)
 static inline int _real_stat(const char *path, struct stat *buf)
  { return stat(path, buf); }
 
+static inline int _real_mkdir(const char *path, int mode)
+{
+#ifdef __WIN32__
+  return mkdir(path);
+#else
+  return mkdir(path, mode);
+#endif
+}
+
 // Including any of these will replace the names of the real functions above.
 #include "path.h"
 #include "util.h"
@@ -125,6 +134,18 @@ int mzx_chdir(const char *path)
 #endif
 
   return _real_chdir(path);
+}
+
+int mzx_mkdir(const char *path, int mode)
+{
+#ifdef __WIN32__
+  wchar_t wpath[MAX_PATH];
+
+  if(utf8_to_utf16(path, wpath, MAX_PATH))
+    return _wmkdir(wpath);
+#endif
+
+  return _real_mkdir(path, mode);
 }
 
 int mzx_unlink(const char *path)
