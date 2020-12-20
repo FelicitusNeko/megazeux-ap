@@ -68,8 +68,8 @@ class Opal {
             void            ComputeKeyScaleLevel();
 
         protected:
-            Opal *          Master;             // Master object
-            Channel *       Chan;               // Owning channel
+            const Opal *    Master;             // Master object
+            const Channel * Chan;               // Owning channel
             uint32_t        Phase;              // The current offset in the selected waveform
             uint16_t        Waveform;           // The waveform id this operator is using
             uint16_t        FreqMultTimes2;     // Frequency multiplier * 2
@@ -123,7 +123,11 @@ class Opal {
                     d->SetChannel(this);
             }
 
+#ifdef OPAL_NO_OPTIMIZATIONS
             void            Output(int16_t &left, int16_t &right);
+#else
+            void            Output(int16_t &left, int16_t &right, uint16_t VibratoShift, bool VibratoNeg);
+#endif
             void            SetEnable(bool on) {  Enable = on;  }
             void            SetChannelPair(Channel *pair) {  ChannelPair = pair;  }
 
@@ -148,14 +152,14 @@ class Opal {
 
             Operator *      Op[4];
 
-            Opal *          Master;             // Master object
+            const Opal *    Master;             // Master object
             uint16_t        Freq;               // Frequency; actually it's a phase stepping value
             uint16_t        Octave;             // Also known as "block" in Yamaha parlance
             uint32_t        PhaseStep;
             uint16_t        KeyScaleNumber;
             uint16_t        FeedbackShift;
             uint16_t        ModulationType;
-            Channel *       ChannelPair;
+            const Channel * ChannelPair;
             bool            Enable;
             bool            LeftEnable, RightEnable;
     };
@@ -201,6 +205,7 @@ const uint16_t Opal::RateTables[4][8] = {
 };
 //--------------------------------------------------------------------------------------------------
 const uint16_t Opal::ExpTable[0x100] = {
+#ifdef OPAL_NO_OPTIMIZATIONS
     1018, 1013, 1007, 1002,  996,  991,  986,  980,  975,  969,  964,  959,  953,  948,  942,  937,
      932,  927,  921,  916,  911,  906,  900,  895,  890,  885,  880,  874,  869,  864,  859,  854,
      849,  844,  839,  834,  829,  824,  819,  814,  809,  804,  799,  794,  789,  784,  779,  774,
@@ -217,6 +222,25 @@ const uint16_t Opal::ExpTable[0x100] = {
      139,  136,  133,  130,  126,  123,  120,  117,  114,  111,  108,  105,  102,   99,   96,   93,
       90,   87,   84,   81,   78,   75,   72,   69,   66,   63,   60,   57,   54,   51,   48,   45,
       42,   40,   37,   34,   31,   28,   25,   22,   20,   17,   14,   11,    8,    6,    3,    0,
+#else
+    /* This is the same table as above but with some more operator math rolled in. */
+    4084, 4074, 4062, 4052, 4040, 4030, 4020, 4008, 3998, 3986, 3976, 3966, 3954, 3944, 3932, 3922,
+    3912, 3902, 3890, 3880, 3870, 3860, 3848, 3838, 3828, 3818, 3808, 3796, 3786, 3776, 3766, 3756,
+    3746, 3736, 3726, 3716, 3706, 3696, 3686, 3676, 3666, 3656, 3646, 3636, 3626, 3616, 3606, 3596,
+    3588, 3578, 3568, 3558, 3548, 3538, 3530, 3520, 3510, 3500, 3492, 3482, 3472, 3464, 3454, 3444,
+    3434, 3426, 3416, 3408, 3398, 3388, 3380, 3370, 3362, 3352, 3344, 3334, 3326, 3316, 3308, 3298,
+    3290, 3280, 3272, 3262, 3254, 3246, 3236, 3228, 3218, 3210, 3202, 3192, 3184, 3176, 3168, 3158,
+    3150, 3142, 3132, 3124, 3116, 3108, 3100, 3090, 3082, 3074, 3066, 3058, 3050, 3040, 3032, 3024,
+    3016, 3008, 3000, 2992, 2984, 2976, 2968, 2960, 2952, 2944, 2936, 2928, 2920, 2912, 2904, 2896,
+    2888, 2880, 2872, 2866, 2858, 2850, 2842, 2834, 2826, 2818, 2812, 2804, 2796, 2788, 2782, 2774,
+    2766, 2758, 2752, 2744, 2736, 2728, 2722, 2714, 2706, 2700, 2692, 2684, 2678, 2670, 2664, 2656,
+    2648, 2642, 2634, 2628, 2620, 2614, 2606, 2600, 2592, 2584, 2578, 2572, 2564, 2558, 2550, 2544,
+    2536, 2530, 2522, 2516, 2510, 2502, 2496, 2488, 2482, 2476, 2468, 2462, 2456, 2448, 2442, 2436,
+    2428, 2422, 2416, 2410, 2402, 2396, 2390, 2384, 2376, 2370, 2364, 2358, 2352, 2344, 2338, 2332,
+    2326, 2320, 2314, 2308, 2300, 2294, 2288, 2282, 2276, 2270, 2264, 2258, 2252, 2246, 2240, 2234,
+    2228, 2222, 2216, 2210, 2204, 2198, 2192, 2186, 2180, 2174, 2168, 2162, 2156, 2150, 2144, 2138,
+    2132, 2128, 2122, 2116, 2110, 2104, 2098, 2092, 2088, 2082, 2076, 2070, 2064, 2060, 2054, 2048,
+#endif
 };
 //--------------------------------------------------------------------------------------------------
 const uint16_t Opal::LogSinTable[0x100] = {
@@ -567,11 +591,21 @@ void Opal::Output(int16_t &left, int16_t &right) {
 
     int32_t leftmix = 0, rightmix = 0;
 
+#ifndef OPAL_NO_OPTIMIZATIONS
+    // 0  3  7  3  0  -3  -7  -3
+    uint16_t VibratoShift = (VibratoClock & 3) ? ((VibratoDepth ? 0 : 1) + (VibratoClock & 1) + 7) : 31;
+    bool VibratoNeg = (VibratoClock & 4);
+#endif
+
     // Sum the output of each channel
     for (int i = 0; i < NumChannels; i++) {
 
         int16_t chanleft, chanright;
+#ifdef OPAL_NO_OPTIMIZATIONS
         Chan[i].Output(chanleft, chanright);
+#else
+        Chan[i].Output(chanleft, chanright, VibratoShift, VibratoNeg);
+#endif
 
         leftmix += chanleft;
         rightmix += chanright;
@@ -635,7 +669,11 @@ Opal::Channel::Channel() {
 //==================================================================================================
 // Produce output from channel.
 //==================================================================================================
+#ifdef OPAL_NO_OPTIMIZATIONS
 void Opal::Channel::Output(int16_t &left, int16_t &right) {
+#else
+void Opal::Channel::Output(int16_t &left, int16_t &right, uint16_t VibratoShift, bool VibratoNeg) {
+#endif
 
     // Has the channel been disabled?  This is usually a result of the 4-op enables being used to
     // disable the secondary channel in each 4-op pair
@@ -644,6 +682,7 @@ void Opal::Channel::Output(int16_t &left, int16_t &right) {
         return;
     }
 
+#ifdef OPAL_NO_OPTIMIZATIONS
     int16_t vibrato = (Freq >> 7) & 7;
     if (!Master->VibratoDepth)
         vibrato >>= 1;
@@ -660,6 +699,11 @@ void Opal::Channel::Output(int16_t &left, int16_t &right) {
     }
 
     vibrato <<= Octave;
+#else
+    int16_t vibrato = (Freq & 0x380) >> VibratoShift << Octave;
+    if (VibratoNeg)
+        vibrato = -vibrato;
+#endif
 
     // Combine individual operator outputs
     int16_t out, acc;
@@ -1070,9 +1114,13 @@ int16_t Opal::Operator::Output(uint16_t keyscalenum, uint32_t phase_step, int16_
     // position given by the 8 LSB's of the input. The value + 1024 (the hidden bit) is then the
     // significand of the floating point output and the yet unused MSB's of the input are the
     // exponent of the floating point output."
+#ifdef OPAL_NO_OPTIMIZATIONS
     int16_t v = Master->ExpTable[mix & 0xFF] + 1024;
     v >>= mix >> 8;
     v += v;
+#else
+    int16_t v = Opal::ExpTable[mix & 0xFF] >> (mix >> 8);
+#endif
     if (negate)
         v = ~v;
 
