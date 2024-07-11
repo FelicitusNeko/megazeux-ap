@@ -40,6 +40,138 @@
 #include <cstdio>
 #endif
 
+#define TR_MASK_TABLES
+
+/* Convert a 1bpp opacity mask to a PIXTYPE opacity mask.
+ * This could also technically be used for SMZX except that
+ * generating the initial mask is too slow. */
+template<typename PIXTYPE, typename ALIGNTYPE>
+static inline ALIGNTYPE tr_mask(unsigned chr_xor_tcol);
+
+#ifndef SKIP_8BPP
+template<>
+inline uint8_t tr_mask<uint8_t, uint8_t>(unsigned chr_xor_tcol)
+{
+  return chr_xor_tcol & 1 ? 0xff : 0x00;
+}
+
+template<>
+inline uint16_t tr_mask<uint8_t, uint16_t>(unsigned chr_xor_tcol)
+{
+  static const uint16_t table[] =
+  {
+#if PLATFORM_BYTE_ORDER == PLATFORM_BIG_ENDIAN
+    0x0000, 0x00ff, 0xff00, 0xffff
+#else
+    0x0000, 0xff00, 0x00ff, 0xffff
+#endif
+  };
+  return table[chr_xor_tcol & 0x3];
+}
+
+static const uint32_t table_8_32[] =
+{
+#if PLATFORM_BYTE_ORDER == PLATFORM_BIG_ENDIAN
+  0x00000000, 0x000000ff, 0x0000ff00, 0x0000ffff,
+  0x00ff0000, 0x00ff00ff, 0x00ffff00, 0x00ffffff,
+  0xff000000, 0xff0000ff, 0xff00ff00, 0xff00ffff,
+  0xffff0000, 0xffff00ff, 0xffffff00, 0xffffffff
+#else
+  0x00000000, 0xff000000, 0x00ff0000, 0xffff0000,
+  0x0000ff00, 0xff00ff00, 0x00ffff00, 0xffffff00,
+  0x000000ff, 0xff0000ff, 0x00ff00ff, 0xffff00ff,
+  0x0000ffff, 0xff00ffff, 0x00ffffff, 0xffffffff
+#endif
+};
+
+template<>
+inline uint32_t tr_mask<uint8_t, uint32_t>(unsigned chr_xor_tcol)
+{
+  return table_8_32[chr_xor_tcol & 0xf];
+}
+
+template<>
+inline uint64_t tr_mask<uint8_t, uint64_t>(unsigned chr_xor_tcol)
+{
+#if PLATFORM_BYTE_ORDER == PLATFORM_BIG_ENDIAN
+  return ((uint64_t)table_8_32[chr_xor_tcol >> 4] << 32) |
+          table_8_32[chr_xor_tcol & 0xf];
+#else
+  return ((uint64_t)table_8_32[chr_xor_tcol & 0xf] << 32) |
+          table_8_32[chr_xor_tcol >> 4];
+#endif
+}
+#endif /* !SKIP_8BPP */
+
+#ifndef SKIP_16BPP
+template<>
+inline uint16_t tr_mask<uint16_t, uint16_t>(unsigned chr_xor_tcol)
+{
+  return chr_xor_tcol & 1 ? 0xffff : 0x0000;
+}
+
+template<>
+inline uint32_t tr_mask<uint16_t, uint32_t>(unsigned chr_xor_tcol)
+{
+  static const uint32_t table[] =
+  {
+#if PLATFORM_BYTE_ORDER == PLATFORM_BIG_ENDIAN
+    0x00000000, 0x0000ffff, 0xffff0000, 0xffffffff
+#else
+    0x00000000, 0xffff0000, 0x0000ffff, 0xffffffff
+#endif
+  };
+  return table[chr_xor_tcol & 0x3];
+}
+
+template<>
+inline uint64_t tr_mask<uint16_t, uint64_t>(unsigned chr_xor_tcol)
+{
+  static const uint64_t table[] =
+  {
+#if PLATFORM_BYTE_ORDER == PLATFORM_BIG_ENDIAN
+    0x0000000000000000, 0x000000000000ffff, 0x00000000ffff0000, 0x00000000ffffffff,
+    0x0000ffff00000000, 0x0000ffff0000ffff, 0x0000ffffffff0000, 0x0000ffffffffffff,
+    0xffff000000000000, 0xffff00000000ffff, 0xffff0000ffff0000, 0xffff0000ffffffff,
+    0xffffffff00000000, 0xffffffff0000ffff, 0xffffffffffff0000, 0xffffffffffffffff,
+#else
+    0x0000000000000000, 0xffff000000000000, 0x0000ffff00000000, 0xffffffff00000000,
+    0x00000000ffff0000, 0xffff0000ffff0000, 0x0000ffffffff0000, 0xffffffffffff0000,
+    0x000000000000ffff, 0xffff00000000ffff, 0x0000ffff0000ffff, 0xffffffff0000ffff,
+    0x00000000ffffffff, 0xffff0000ffffffff, 0x0000ffffffffffff, 0xffffffffffffffff,
+#endif
+  };
+  return table[chr_xor_tcol & 0xf];
+}
+#endif /* !SKIP_16BPP */
+
+template<>
+inline uint32_t tr_mask<uint32_t, uint32_t>(unsigned chr_xor_tcol)
+{
+  return chr_xor_tcol & 1 ? 0xffffffff : 0x00000000;
+}
+
+template<>
+inline uint64_t tr_mask<uint32_t, uint64_t>(unsigned chr_xor_tcol)
+{
+  static const uint64_t table[] =
+  {
+#if PLATFORM_BYTE_ORDER == PLATFORM_BIG_ENDIAN
+    0x0000000000000000,
+    0x00000000ffffffff,
+    0xffffffff00000000,
+    0xffffffffffffffff
+#else
+    0x0000000000000000,
+    0xffffffff00000000,
+    0x00000000ffffffff,
+    0xffffffffffffffff
+#endif
+  };
+  return table[chr_xor_tcol & 0x3];
+}
+
+
 template<typename PIXTYPE>
 static void render_layer_func(
  void * RESTRICT pixels, int width_px, int height_px, size_t pitch,
@@ -346,20 +478,16 @@ static inline int select_color_16(uint8_t color, int ppal)
  * Since this requires 1<<PPW values to be computed, 8 PPW renderers would
  * need 256 combinations, which would probably hurt performance more than help
  * it. Instead, 8 PPW just uses a special case of the 4 PPW code (see below).
- *
- * Note: this optimization is not worth implementing for SMZX as doubling is
- * much faster to precompute in SMZX mode.
  */
 template<int BPP, int PPW, typename ALIGNTYPE>
-static inline void set_colors_mzx(ALIGNTYPE (&dest)[16], ALIGNTYPE (&cols)[4])
+static inline void set_colors_mzx(ALIGNTYPE (&dest)[16], ALIGNTYPE bg, ALIGNTYPE fg)
 {
-  ALIGNTYPE bg = cols[0];
-  ALIGNTYPE fg = cols[1];
-
 #if PLATFORM_BYTE_ORDER == PLATFORM_LIL_ENDIAN
   switch(PPW)
   {
     case 1:
+      dest[0] = bg;
+      dest[1] = fg;
       break;
 
     case 2:
@@ -393,6 +521,8 @@ static inline void set_colors_mzx(ALIGNTYPE (&dest)[16], ALIGNTYPE (&cols)[4])
   switch(PPW)
   {
     case 1:
+      dest[0] = bg;
+      dest[1] = fg;
       break;
 
     case 2:
@@ -425,16 +555,80 @@ static inline void set_colors_mzx(ALIGNTYPE (&dest)[16], ALIGNTYPE (&cols)[4])
 #endif
 }
 
+template<int BPP, int PPW, typename ALIGNTYPE>
+static inline void set_colors_smzx(ALIGNTYPE (&dest)[16],
+ ALIGNTYPE c0, ALIGNTYPE c1, ALIGNTYPE c2, ALIGNTYPE c3)
+{
+  switch(PPW)
+  {
+    case 1:
+      dest[0] = c0;
+      dest[1] = c1;
+      dest[2] = c2;
+      dest[3] = c3;
+      break;
+
+    case 2:
+      dest[0] = BPPx1(c0) | c0;
+      dest[1] = BPPx1(c1) | c1;
+      dest[2] = BPPx1(c2) | c2;
+      dest[3] = BPPx1(c3) | c3;
+      break;
+
+    case 4:
+    case 8:
+#if PLATFORM_BYTE_ORDER == PLATFORM_LIL_ENDIAN
+      dest[0]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c0) | c0;
+      dest[1]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c0) | c0;
+      dest[2]  = BPPx3(c2) | BPPx2(c2) | BPPx1(c0) | c0;
+      dest[3]  = BPPx3(c3) | BPPx2(c3) | BPPx1(c0) | c0;
+      dest[4]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c1) | c1;
+      dest[5]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c1) | c1;
+      dest[6]  = BPPx3(c2) | BPPx2(c2) | BPPx1(c1) | c1;
+      dest[7]  = BPPx3(c3) | BPPx2(c3) | BPPx1(c1) | c1;
+      dest[8]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c2) | c2;
+      dest[9]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c2) | c2;
+      dest[10] = BPPx3(c2) | BPPx2(c2) | BPPx1(c2) | c2;
+      dest[11] = BPPx3(c3) | BPPx2(c3) | BPPx1(c2) | c2;
+      dest[12] = BPPx3(c0) | BPPx2(c0) | BPPx1(c3) | c3;
+      dest[13] = BPPx3(c1) | BPPx2(c1) | BPPx1(c3) | c3;
+      dest[14] = BPPx3(c2) | BPPx2(c2) | BPPx1(c3) | c3;
+      dest[15] = BPPx3(c3) | BPPx2(c3) | BPPx1(c3) | c3;
+#else
+      dest[0]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c0) | c0;
+      dest[1]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c1) | c1;
+      dest[2]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c2) | c2;
+      dest[3]  = BPPx3(c0) | BPPx2(c0) | BPPx1(c3) | c3;
+      dest[4]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c0) | c0;
+      dest[5]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c1) | c1;
+      dest[6]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c2) | c2;
+      dest[7]  = BPPx3(c1) | BPPx2(c1) | BPPx1(c3) | c3;
+      dest[8]  = BPPx3(c2) | BPPx2(c2) | BPPx1(c0) | c0;
+      dest[9]  = BPPx3(c2) | BPPx2(c2) | BPPx1(c1) | c1;
+      dest[10] = BPPx3(c2) | BPPx2(c2) | BPPx1(c2) | c2;
+      dest[11] = BPPx3(c2) | BPPx2(c2) | BPPx1(c3) | c3;
+      dest[12] = BPPx3(c3) | BPPx2(c3) | BPPx1(c0) | c0;
+      dest[13] = BPPx3(c3) | BPPx2(c3) | BPPx1(c1) | c1;
+      dest[14] = BPPx3(c3) | BPPx2(c3) | BPPx1(c2) | c2;
+      dest[15] = BPPx3(c3) | BPPx2(c3) | BPPx1(c3) | c3;
+#endif
+      break;
+  }
+}
+
 /**
  * Use the set_colors array to compute multiple pixel values simultaneously.
  * This optimization is only useful for PPW >= 2 renderers.
  */
 template<int PPW, typename ALIGNTYPE>
-static inline ALIGNTYPE get_colors_mzx(ALIGNTYPE (&set_colors)[16],
+static inline ALIGNTYPE get_colors(ALIGNTYPE (&set_colors)[16],
  uint8_t char_byte, int write_pos)
 {
+#if 0
   unsigned int mask = ((0xFF) << (8 - PPW)) & 0xFF;
   unsigned int idx = (char_byte & (mask >> (write_pos * PPW))) << (write_pos * PPW) >> (8 - PPW);
+#endif
+  unsigned idx = ((char_byte << (write_pos * PPW)) & 0xff) >> (8 - PPW);
 
   switch(PPW)
   {
@@ -517,11 +711,14 @@ static inline void render_layer_func(
 
   // Transparency vars...
   int tcol = layer->transparent_col;
-  ALIGNTYPE bgdata;
+#ifndef TR_MASK_TABLES
   ALIGNTYPE mask = (PIXTYPE)(~0);
+  ALIGNTYPE smask = BPPx1(mask) | mask;
+#endif
 
   const uint8_t *char_ptr;
   unsigned int current_char_byte;
+  unsigned int chr_xor_tcol;
   unsigned int pcol;
 
   ALIGNTYPE *drawPtr;
@@ -589,12 +786,12 @@ static inline void render_layer_func(
         {
           if(SMZX)
           {
+            unsigned int pal = ((src->bg_color & 0xF) << 4) | (src->fg_color & 0xF);
             all_tcol = true;
             has_tcol = false;
             byte_tcol = 0xFFFF;
             for(i = 0; i < 4; i++)
             {
-              unsigned int pal = ((src->bg_color & 0xF) << 4) | (src->fg_color & 0xF);
               char_idx[i] = graphics->smzx_indices[pal * 4 + i];
 
               if(BPP > 8)
@@ -612,12 +809,9 @@ static inline void render_layer_func(
                 has_tcol |= char_idx[i] == tcol;
                 all_tcol &= char_idx[i] == tcol;
               }
-
-              // If writing more than 2 pixels at once, preemptively double
-              // them. This saves having to perform this operation later...
-              if(PPW > 1)
-                char_colors[i] |= BPPx1(char_colors[i]);
             }
+            set_colors_smzx<BPP, PPW>(set_colors,
+             char_colors[0], char_colors[1], char_colors[2], char_colors[3]);
           }
           else
           {
@@ -639,8 +833,7 @@ static inline void render_layer_func(
               byte_tcol = (char_idx[1] == tcol) ? 0xFF : 0x00;
             }
 
-            if(PPW > 1 && (!TR || !has_tcol))
-              set_colors_mzx<BPP,PPW>(set_colors, char_colors);
+            set_colors_mzx<BPP, PPW>(set_colors, char_colors[0], char_colors[1]);
           }
         }
 
@@ -664,6 +857,17 @@ static inline void render_layer_func(
 
           if(!CLIP || (pixel_y + row >= 0 && pixel_y + row < height_px))
           {
+            if(TR)
+            {
+              chr_xor_tcol = current_char_byte ^ byte_tcol;
+              if(SMZX)
+              {
+                chr_xor_tcol |= (chr_xor_tcol >> 1);
+                chr_xor_tcol &= 0x55;
+                chr_xor_tcol |= (chr_xor_tcol << 1);
+              }
+            }
+
             for(write_pos = 0; write_pos < CHAR_W / PPW; write_pos++)
             {
               if(!CLIP ||
@@ -672,13 +876,37 @@ static inline void render_layer_func(
               {
                 if(!SMZX)
                 {
-                  if(PPW > 1 && (!TR || !has_tcol))
+                  if(PPW == 1)
                   {
-                    drawPtr[write_pos] = get_colors_mzx<PPW>(set_colors,
-                     current_char_byte, write_pos);
+                    pcol = !!(current_char_byte & (0x80 >> write_pos));
+                    if(!TR || !has_tcol || char_idx[pcol] != tcol)
+                      drawPtr[write_pos] = set_colors[pcol];
                     continue;
                   }
 
+                  pix = get_colors<PPW>(set_colors,
+                   current_char_byte, write_pos);
+
+                  if(TR && has_tcol)
+                  {
+#ifdef TR_MASK_TABLES
+                    ALIGNTYPE shift = CHAR_W - PPW - write_pos * PPW;
+                    ALIGNTYPE opaque = tr_mask<PIXTYPE,ALIGNTYPE>(
+                     chr_xor_tcol >> shift);
+#else
+                    ALIGNTYPE opaque = 0;
+                    for(i = 0; i < PPW; i++)
+                    {
+                      ALIGNTYPE shift = write_pos * PPW + (PPW - 1 - i);
+                      if(chr_xor_tcol & (0x80 >> shift))
+                        opaque |= mask << PIXEL_POS(i);
+                    }
+#endif
+
+                    pix = (pix & opaque) | (drawPtr[write_pos] & ~opaque);
+                  }
+
+#if 0
                   if(TR)
                     bgdata = drawPtr[write_pos];
 
@@ -696,7 +924,7 @@ static inline void render_layer_func(
                     else
                       pix |= char_colors[pcol] << PIXEL_POS(i);
                   }
-
+#endif
                   drawPtr[write_pos] = pix;
                 }
                 else
@@ -718,42 +946,31 @@ static inline void render_layer_func(
                       if(!TR || tcol != char_idx[pcol])
                         drawPtr[write_pos] = pix;
                     }
+                    continue;
                   }
-                  else
+
+                  pix = get_colors<PPW>(set_colors,
+                   current_char_byte, write_pos);
+
+                  if(TR && has_tcol)
                   {
-                    // NOTE: SMZX colors were already doubled above, so they
-                    // need to be shift+ORed once only.
-                    pix = 0;
-                    if(TR && has_tcol)
+#ifdef TR_MASK_TABLES
+                    ALIGNTYPE shift = CHAR_W - PPW - write_pos * PPW;
+                    ALIGNTYPE opaque = tr_mask<PIXTYPE,ALIGNTYPE>(
+                     chr_xor_tcol >> shift);
+#else
+                    ALIGNTYPE opaque = 0;
+                    for(i = 0; i < PPW; i += 2)
                     {
-                      bgdata = drawPtr[write_pos];
-
-                      for(i = 0; i < PPW; i += 2)
-                      {
-                        ALIGNTYPE shift = write_pos * PPW + (PPW - 2 - i);
-                        pcol = (current_char_byte & (0xC0 >> shift)) << shift >> 6;
-
-                        if(char_idx[pcol] == tcol)
-                        {
-                          pix |= bgdata &
-                           ((mask << PIXEL_POS(i)) |
-                            (mask << PIXEL_POS(i + 1)));
-                        }
-                        else
-                          pix |= char_colors[pcol] << PIXEL_POS_PAIR(i);
-                      }
+                      ALIGNTYPE shift = write_pos * PPW + (PPW - 2 - i);
+                      pcol = (current_char_byte & (0xC0 >> shift)) << shift >> 6;
+                      if(char_idx[pcol] != tcol)
+                        opaque |= smask << PIXEL_POS_PAIR(i);
                     }
-                    else
-                    {
-                      for(i = 0; i < PPW; i += 2)
-                      {
-                        ALIGNTYPE shift = write_pos * PPW + (PPW - 2 - i);
-                        pcol = (current_char_byte & (0xC0 >> shift)) << shift >> 6;
-                        pix |= char_colors[pcol] << PIXEL_POS_PAIR(i);
-                      }
-                    }
-                    drawPtr[write_pos] = pix;
+#endif
+                    pix = (pix & opaque) | (drawPtr[write_pos] & ~opaque);
                   }
+                  drawPtr[write_pos] = pix;
                 }
               }
               else
