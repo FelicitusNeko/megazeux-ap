@@ -1,7 +1,7 @@
 /* MegaZeux
  *
  * Copyright (C) 2017 Dr Lancer-X <drlancer@megazeux.org>
- * Copyright (C) 2020 Alice Rowan <petrifiedrowan@gmail.com>
+ * Copyright (C) 2020, 2024 Alice Rowan <petrifiedrowan@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -486,8 +486,6 @@ static inline void set_colors_mzx(ALIGNTYPE (&dest)[16], ALIGNTYPE bg, ALIGNTYPE
   switch(PPW)
   {
     case 1:
-      dest[0] = bg;
-      dest[1] = fg;
       break;
 
     case 2:
@@ -521,8 +519,6 @@ static inline void set_colors_mzx(ALIGNTYPE (&dest)[16], ALIGNTYPE bg, ALIGNTYPE
   switch(PPW)
   {
     case 1:
-      dest[0] = bg;
-      dest[1] = fg;
       break;
 
     case 2:
@@ -562,17 +558,7 @@ static inline void set_colors_smzx(ALIGNTYPE (&dest)[16],
   switch(PPW)
   {
     case 1:
-      dest[0] = c0;
-      dest[1] = c1;
-      dest[2] = c2;
-      dest[3] = c3;
-      break;
-
     case 2:
-      dest[0] = BPPx1(c0) | c0;
-      dest[1] = BPPx1(c1) | c1;
-      dest[2] = BPPx1(c2) | c2;
-      dest[3] = BPPx1(c3) | c3;
       break;
 
     case 4:
@@ -624,10 +610,6 @@ template<int PPW, typename ALIGNTYPE>
 static inline ALIGNTYPE get_colors(ALIGNTYPE (&set_colors)[16],
  uint8_t char_byte, int write_pos)
 {
-#if 0
-  unsigned int mask = ((0xFF) << (8 - PPW)) & 0xFF;
-  unsigned int idx = (char_byte & (mask >> (write_pos * PPW))) << (write_pos * PPW) >> (8 - PPW);
-#endif
   unsigned idx = ((char_byte << (write_pos * PPW)) & 0xff) >> (8 - PPW);
 
   switch(PPW)
@@ -711,10 +693,8 @@ static inline void render_layer_func(
 
   // Transparency vars...
   int tcol = layer->transparent_col;
-#ifndef TR_MASK_TABLES
   ALIGNTYPE mask = (PIXTYPE)(~0);
   ALIGNTYPE smask = BPPx1(mask) | mask;
-#endif
 
   const uint8_t *char_ptr;
   unsigned int current_char_byte;
@@ -809,9 +789,15 @@ static inline void render_layer_func(
                 has_tcol |= char_idx[i] == tcol;
                 all_tcol &= char_idx[i] == tcol;
               }
+
+              // If writing more than 2 pixels at once, preemptively double
+              // them. This seems slightly better than using set_colors here.
+              if(PPW == 2)
+                char_colors[i] |= BPPx1(char_colors[i]);
             }
-            set_colors_smzx<BPP, PPW>(set_colors,
-             char_colors[0], char_colors[1], char_colors[2], char_colors[3]);
+            if(PPW > 2)
+              set_colors_smzx<BPP, PPW>(set_colors,
+               char_colors[0], char_colors[1], char_colors[2], char_colors[3]);
           }
           else
           {
@@ -833,7 +819,8 @@ static inline void render_layer_func(
               byte_tcol = (char_idx[1] == tcol) ? 0xFF : 0x00;
             }
 
-            set_colors_mzx<BPP, PPW>(set_colors, char_colors[0], char_colors[1]);
+            if(PPW > 1)
+              set_colors_mzx<BPP, PPW>(set_colors, char_colors[0], char_colors[1]);
           }
         }
 
@@ -860,12 +847,15 @@ static inline void render_layer_func(
             if(TR)
             {
               chr_xor_tcol = current_char_byte ^ byte_tcol;
+#if 0
+              // This doesn't work with multiple transparent indices.
               if(SMZX)
               {
                 chr_xor_tcol |= (chr_xor_tcol >> 1);
                 chr_xor_tcol &= 0x55;
                 chr_xor_tcol |= (chr_xor_tcol << 1);
               }
+#endif
             }
 
             for(write_pos = 0; write_pos < CHAR_W / PPW; write_pos++)
@@ -880,7 +870,7 @@ static inline void render_layer_func(
                   {
                     pcol = !!(current_char_byte & (0x80 >> write_pos));
                     if(!TR || !has_tcol || char_idx[pcol] != tcol)
-                      drawPtr[write_pos] = set_colors[pcol];
+                      drawPtr[write_pos] = char_colors[pcol];
                     continue;
                   }
 
@@ -905,26 +895,6 @@ static inline void render_layer_func(
 
                     pix = (pix & opaque) | (drawPtr[write_pos] & ~opaque);
                   }
-
-#if 0
-                  if(TR)
-                    bgdata = drawPtr[write_pos];
-
-                  pix = 0;
-                  for(i = 0; i < PPW; i++)
-                  {
-                    //ALIGNTYPE shift = write_pos * PPW + (PPW - 1 - i);
-                    //pcol = (current_char_byte & (0x80 >> shift)) >> (7 - shift);
-
-                    // This seems to perform a little better than the old method (above).
-                    pcol = !!(current_char_byte & (0x80 >> (write_pos * PPW + (PPW - 1 - i))));
-
-                    if(TR && char_idx[pcol] == tcol)
-                      pix |= bgdata & (mask << PIXEL_POS(i));
-                    else
-                      pix |= char_colors[pcol] << PIXEL_POS(i);
-                  }
-#endif
                   drawPtr[write_pos] = pix;
                 }
                 else
@@ -932,20 +902,34 @@ static inline void render_layer_func(
                   if(PPW == 1)
                   {
                     pcol = (current_char_byte & (0xC0 >> write_pos)) << write_pos >> 6;
+                    if(TR && has_tcol && tcol == char_idx[pcol])
+                    {
+                      // Skip two pixels instead of 1.
+                      write_pos++;
+                      continue;
+                    }
 
                     pix = char_colors[pcol];
                     if(!CLIP || (pixel_x + write_pos * PPW >= 0))
-                    {
-                      if(!TR || tcol != char_idx[pcol])
-                        drawPtr[write_pos] = pix;
-                    }
+                      drawPtr[write_pos] = pix;
+
                     write_pos++;
 
                     if(!CLIP || (pixel_x + write_pos * PPW < width_px))
-                    {
-                      if(!TR || tcol != char_idx[pcol])
-                        drawPtr[write_pos] = pix;
-                    }
+                      drawPtr[write_pos] = pix;
+
+                    continue;
+                  }
+                  else
+
+                  if(PPW == 2)
+                  {
+                    ALIGNTYPE shift = write_pos * PPW;
+                    pcol = (current_char_byte & (0xC0 >> shift)) << shift >> 6;
+                    if(TR && has_tcol && tcol == char_idx[pcol])
+                      continue;
+
+                    drawPtr[write_pos] = char_colors[pcol];
                     continue;
                   }
 
@@ -954,7 +938,9 @@ static inline void render_layer_func(
 
                   if(TR && has_tcol)
                   {
-#ifdef TR_MASK_TABLES
+#if defined(TR_MASK_TABLES) && 0
+                    /* Note: this doesn't work correctly because multiple
+                     * indices can contain the transparent color :( */
                     ALIGNTYPE shift = CHAR_W - PPW - write_pos * PPW;
                     ALIGNTYPE opaque = tr_mask<PIXTYPE,ALIGNTYPE>(
                      chr_xor_tcol >> shift);
