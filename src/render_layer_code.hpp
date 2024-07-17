@@ -706,8 +706,8 @@ static inline void render_layer_func(
               set_colors_mzx<BPP, PPW>(set_colors, char_colors[0], char_colors[1]);
               if(TR && has_tcol)
               {
-                ALIGNTYPE m0 = char_idx[0] == tcol ? 0 : mask;
-                ALIGNTYPE m1 = char_idx[1] == tcol ? 0 : mask;
+                ALIGNTYPE m0 = !byte_tcol ? 0 : mask;
+                ALIGNTYPE m1 = byte_tcol ? 0 : mask;
                 set_colors_mzx<BPP, PPW>(set_opaque, m0, m1);
               }
             }
@@ -751,21 +751,20 @@ static inline void render_layer_func(
                 if(SMZX && PPW == 1)
                 {
                   pcol = (current_char_byte & (0xC0 >> write_pos)) << write_pos >> 6;
+                  if(TR && has_tcol && tcol == char_idx[pcol])
+                  {
+                    write_pos++;
+                    continue;
+                  }
 
                   pix = char_colors[pcol];
                   if(!CLIP || (pixel_x + write_pos * PPW >= 0))
-                  {
-                    if(!TR || !has_tcol || tcol != char_idx[pcol])
-                      drawPtr[write_pos] = pix;
-                  }
+                    drawPtr[write_pos] = pix;
 
                   write_pos++;
 
                   if(!CLIP || (pixel_x + write_pos * PPW < width_px))
-                  {
-                    if(!TR || !has_tcol || tcol != char_idx[pcol])
-                      drawPtr[write_pos] = pix;
-                  }
+                    drawPtr[write_pos] = pix;
                 }
                 else
 
