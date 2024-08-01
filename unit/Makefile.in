@@ -158,6 +158,10 @@ ${unit_obj}/%${unit_ext}: ${unit_src}/%.cpp
 	$(if ${V},,@echo "  CXX     " $<)
 	${CXX} -MD ${unit_cflags} $< -o $@ ${unit_common_objs} ${unit_ldflags}
 
+${unit_obj}/render${unit_ext}: ${unit_src}/render.cpp
+	$(if ${V},,@echo "  CXX     " $<)
+	${CXX} -MD ${unit_cflags} ${MSSE2} ${MAVX} ${MNEON} $< -o $@ ${unit_common_objs} ${unit_ldflags}
+
 ${unit_obj_editor}/%${unit_ext}: ${unit_src_editor}/%.cpp
 	$(if ${V},,@echo "  CXX     " $<)
 	${CXX} -MD ${unit_cflags} $< -o $@ ${unit_common_objs} ${unit_ldflags}
