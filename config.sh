@@ -65,6 +65,7 @@ usage() {
 	echo "  --enable-stdio-redirect   Redirect console logging to stdout.txt/stderr.txt."
 	echo "  --disable-stack-protector Disable stack protector safety checks."
 	echo "  --neon-armel --neon-armhf Enable Neon (ARM, Linux, 32-bit only)."
+	echo "  --enable-rvv              Enable RVV layer renderer (RISC-V, Linux only)."
 	echo
 	echo "Platform-dependent options:"
 	echo "  --enable-sdl              Enable SDL backend, typically SDL2 (default)."
@@ -213,6 +214,7 @@ LAYER_RENDERING="true"
 DOS_SVGA="true"
 VFS="true"
 ARMHF="not-arm"
+RVV="false"
 
 #
 # User may override above settings
@@ -480,6 +482,9 @@ while [ "$1" != "" ]; do
 
 	[ "$1" = "--neon-armel" ] && ARMHF="false"
 	[ "$1" = "--neon-armhf" ] && ARMHF="true"
+
+	[ "$1" = "--enable-rvv" ]  && RVV="true"
+	[ "$1" = "--disable-rvv" ] && RVV="false"
 
 	if [ "$1" = "--help" ]; then
 		usage
@@ -1917,7 +1922,7 @@ fi
 
 #
 # ARM 32-bit float abi autodetection (if applicable).
-# If the platform already enables Neon this can be skipped.
+# If the platform already enables Neon this can be disregarded.
 #
 if [ "$ARCHNAME" = "arm" ] && [ "$ARMHF" -ne "not-arm" ]; then
 	if command -v "readelf" >/dev/null 2>&1; then
@@ -1939,6 +1944,25 @@ if [ "$ARMHF" = "false" ]; then
 elif [ "$ARMHF" = "true" ]; then
 	echo "Neon with hard float ABI enabled."
 	echo "NEON_FLOAT_ABI=hard" >>platform.inc
+fi
+
+#
+# RISC-V RVV (if applicable).
+# If the platform already enables RVV and has a WELL-DEFINED
+# RVV version number, this option can be disregarded.
+#
+if [ "$RVV" = "true" ]; then
+	if [ "$ARCHNAME" = "riscv64" ]; then
+		echo "Enabled RVV layer renderer (as rv64gcv)."
+		echo "WARNING: RVV has incompatible versions! Do not distribute!"
+		echo "RVV_ABI=rv64gcv" >>platform.inc
+	elif [ "$ARCHNAME" = "riscv32" ]; then
+		echo "Enabled RVV layer renderer (as rv32gcv)."
+		echo "WARNING: RVV has incompatible versions! Do not distribute!"
+		echo "RVV_ABI=rv32gcv" >>platform.inc
+	else
+		echo "Ignoring invalid RVV option."
+	fi
 fi
 
 #
